@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "716700607349",
+    "project_id": "agendaria-aa948",
+    "storage_bucket": "agendaria-aa948.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:716700607349:android:4ab758fa71b3f77590293c",
+        "android_client_info": {
+          "package_name": "com.example.agendaria"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1hdUhdDdv1Nhs7lbj-7CF59Hu1ewdwns"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
