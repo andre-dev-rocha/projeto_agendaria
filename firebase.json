@@ -1,1 +1,38 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"agendaria-aa948","appId":"1:716700607349:android:4ab758fa71b3f77590293c","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"agendaria-aa948","configurations":{"android":"1:716700607349:android:4ab758fa71b3f77590293c","ios":"1:716700607349:ios:7e938bfcfbeb249790293c","macos":"1:716700607349:ios:7e938bfcfbeb249790293c","web":"1:716700607349:web:b9035f7f6d5f3d4f90293c","windows":"1:716700607349:web:790786d02a220e8190293c"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "agendaria-aa948",
+          "appId": "1:716700607349:android:4ab758fa71b3f77590293c",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "agendaria-aa948",
+          "configurations": {
+            "android": "1:716700607349:android:4ab758fa71b3f77590293c",
+            "ios": "1:716700607349:ios:7e938bfcfbeb249790293c",
+            "macos": "1:716700607349:ios:7e938bfcfbeb249790293c",
+            "web": "1:716700607349:web:b9035f7f6d5f3d4f90293c",
+            "windows": "1:716700607349:web:790786d02a220e8190293c"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}
