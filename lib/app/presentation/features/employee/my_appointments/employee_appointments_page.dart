@@ -9,7 +9,8 @@ class EmployeeAppointmentsPage extends StatefulWidget {
   const EmployeeAppointmentsPage({Key? key}) : super(key: key);
 
   @override
-  State<EmployeeAppointmentsPage> createState() => _EmployeeAppointmentsPageState();
+  State<EmployeeAppointmentsPage> createState() =>
+      _EmployeeAppointmentsPageState();
 }
 
 class _EmployeeAppointmentsPageState extends State<EmployeeAppointmentsPage> {
@@ -17,6 +18,48 @@ class _EmployeeAppointmentsPageState extends State<EmployeeAppointmentsPage> {
 
   // Guarda a data selecionada pelo usuário. Inicia com a data de hoje.
   DateTime _selectedDate = DateTime.now();
+
+  Future<String> _getUserName(String userId) async {
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (userDoc.exists) {
+        // Certifique-se de que o campo no seu Firestore se chama 'name'
+        return (userDoc.data() as Map<String, dynamic>)['name'] ??
+            'Cliente Desconhecido';
+      }
+    } catch (e) {
+      print('Erro ao buscar nome do cliente: $e');
+    }
+    // Retorna um trecho do ID se o nome não for encontrado por algum motivo
+    return 'ID: ${userId.substring(0, 6)}...';
+  }
+
+  void _updateAppointmentStatus(String appointmentId, String newStatus) {
+    FirebaseFirestore.instance
+        .collection('appointments')
+        .doc(appointmentId)
+        .update({'status': newStatus})
+        .then(
+          (_) => ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Agendamento atualizado para "$newStatus"!'),
+              backgroundColor: Colors.green,
+            ),
+          ),
+        )
+        .catchError(
+          (error) => ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao atualizar status: $error'),
+              backgroundColor: Colors.red,
+            ),
+          ),
+        );
+  }
 
   // Função para mostrar o seletor de data (DatePicker)
   Future<void> _selectDate(BuildContext context) async {
@@ -37,7 +80,11 @@ class _EmployeeAppointmentsPageState extends State<EmployeeAppointmentsPage> {
   @override
   Widget build(BuildContext context) {
     // Define o início e o fim do dia para a consulta no Firestore
-    final startOfDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final startOfDay = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+    );
     final endOfDay = startOfDay.add(const Duration(days: 1));
 
     return Scaffold(
@@ -67,8 +114,14 @@ class _EmployeeAppointmentsPageState extends State<EmployeeAppointmentsPage> {
                   .collection('appointments')
                   .where('employeeId', isEqualTo: currentEmployeeId)
                   // Filtra os agendamentos que estão dentro do dia selecionado
-                  .where('startDateTime', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-                  .where('startDateTime', isLessThan: Timestamp.fromDate(endOfDay))
+                  .where(
+                    'startDateTime',
+                    isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
+                  )
+                  .where(
+                    'startDateTime',
+                    isLessThan: Timestamp.fromDate(endOfDay),
+                  )
                   .orderBy('startDateTime') // Ordena por hora
                   .snapshots(),
               builder: (context, snapshot) {
@@ -78,7 +131,11 @@ class _EmployeeAppointmentsPageState extends State<EmployeeAppointmentsPage> {
                 if (snapshot.hasError) {
                   // Este erro pode acontecer se o índice do Firestore não existir
                   print(snapshot.error); // Ajuda a depurar
-                  return const Center(child: Text('Ocorreu um erro. Verifique os índices do Firestore.'));
+                  return const Center(
+                    child: Text(
+                      'Ocorreu um erro. Verifique os índices do Firestore.',
+                    ),
+                  );
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Center(
@@ -89,26 +146,77 @@ class _EmployeeAppointmentsPageState extends State<EmployeeAppointmentsPage> {
                   );
                 }
 
-                final appointments = snapshot.data!.docs.map((doc) => Appointment.fromFirestore(doc)).toList();
+                final appointments = snapshot.data!.docs
+                    .map((doc) => Appointment.fromFirestore(doc))
+                    .toList();
 
                 return ListView.builder(
                   itemCount: appointments.length,
                   itemBuilder: (context, index) {
                     final appointment = appointments[index];
-                    final formattedTime = DateFormat('HH:mm').format(appointment.startDateTime);
+                    final formattedTime = DateFormat(
+                      'HH:mm',
+                    ).format(appointment.startDateTime);
+                    // Define a cor e o ícone com base no status
+                    IconData statusIcon;
+                    Color statusColor;
+                    switch (appointment.status) {
+                      case 'completed':
+                        statusIcon = Icons.check_circle;
+                        statusColor = Colors.green;
+                        break;
+                      case 'canceled':
+                        statusIcon = Icons.cancel;
+                        statusColor = Colors.red;
+                        break;
+                      default: // 'scheduled'
+                        statusIcon = Icons.schedule;
+                        statusColor = Colors.blue;
+                    }
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
                       child: ListTile(
                         leading: CircleAvatar(
-                          child: Text(formattedTime.substring(0,2)), // Mostra a hora
+                          backgroundColor: statusColor,
+                          child: Icon(statusIcon, color: Colors.white),
                         ),
-                        title: Text(appointment.serviceName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        // TODO: Precisamos do nome do cliente aqui. Isso exigirá outra consulta.
-                        subtitle: Text('Cliente ID: ${appointment.clientId}'), 
-                        trailing: Text(
-                          'R\$ ${appointment.price.toStringAsFixed(2)}',
-                          style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                        title: Text(
+                          appointment.serviceName,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: FutureBuilder<String>(
+                          // Usamos FutureBuilder para buscar o nome do cliente
+                          future: _getUserName(
+                            appointment.clientId,
+                          ), // Reutilizamos a função que já temos!
+                          builder: (context, nameSnapshot) {
+                            return Text(
+                              nameSnapshot.data ?? 'Carregando cliente...',
+                            );
+                          },
+                        ),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (value) {
+                            _updateAppointmentStatus(appointment.id, value);
+                          },
+                          itemBuilder: (BuildContext context) =>
+                              <PopupMenuEntry<String>>[
+                                // Mostra a opção apenas se o status permitir
+                                if (appointment.status == 'scheduled')
+                                  const PopupMenuItem<String>(
+                                    value: 'completed',
+                                    child: Text('Marcar como Concluído'),
+                                  ),
+                                if (appointment.status != 'canceled')
+                                  const PopupMenuItem<String>(
+                                    value: 'canceled',
+                                    child: Text('Cancelar Agendamento'),
+                                  ),
+                              ],
                         ),
                       ),
                     );
