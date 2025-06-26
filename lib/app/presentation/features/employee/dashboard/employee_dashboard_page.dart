@@ -1,4 +1,5 @@
 // Exemplo para client_dashboard_page.dart (faça um similar para Employee)
+import 'package:agendaria/app/presentation/features/employee/my_appointments/employee_appointments_page.dart';
 import 'package:agendaria/app/presentation/features/employee/availability/employee_availability_page.dart';
 import 'package:agendaria/app/presentation/features/employee/my_services/employee_services_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -57,9 +58,21 @@ class EmployeeDashboardPage extends StatelessWidget {
               );
             },
           ),
-          // Adicione mais cards aqui para as próximas funcionalidades
-          // Ex: _buildDashboardCard(context, icon: Icons.calendar_today, title: 'Minha Disponibilidade', ...),
-          // Ex: _buildDashboardCard(context, icon: Icons.schedule, title: 'Meus Atendimentos', ...),
+
+          _buildDashboardCard(
+            context,
+            icon: Icons.schedule,
+            title: 'Meus Atendimentos',
+            subtitle: 'Visualize e filtre seus agendamentos',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const EmployeeAppointmentsPage(),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );

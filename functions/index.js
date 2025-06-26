@@ -9,6 +9,15 @@ exports.agendariaWebhook = functions.https.onRequest((request, response) => {
   const agent = new WebhookClient({ request, response });
 
   async function agendarServico(agent) {
+  // --- NOVA PARTE: RECEBENDO O ID DO USUÁRIO ---
+  // O payload que enviamos do Flutter chega aqui
+  const userId = agent.originalRequest?.payload?.firebase_uid;
+
+  if (!userId) {
+    agent.add("Desculpe, não consegui identificar seu usuário para concluir o agendamento. Por favor, tente fazer login novamente.");
+    return;
+  }
+
     const { servico, date, time } = agent.parameters;
     const serviceName = servico;
 
@@ -72,7 +81,7 @@ exports.agendariaWebhook = functions.https.onRequest((request, response) => {
 
     // 3. Tudo certo! Criar o agendamento
     const newAppointment = {
-      clientId: "TODO: Pegar o ID do cliente logado", // Precisará ser passado do app
+      clientId: userId, 
       employeeId: employeeId,
       serviceId: serviceSnapshot.docs[0].id,
       serviceName: serviceData.name,
