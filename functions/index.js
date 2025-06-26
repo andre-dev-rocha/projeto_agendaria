@@ -1,134 +1,191 @@
-// functions/index.js
+// functions/index.js - VERSÃO COMPLETA E CORRIGIDA
+
+// A linha mais importante - garantindo que TUDO que usamos seja importado
+const {zonedTimeToUtc, utcToZonedTime, format} = require("date-fns-tz");
 const functions = require("firebase-functions");
-const { WebhookClient } = require("dialogflow-fulfillment");
+const {WebhookClient} = require("dialogflow-fulfillment");
 const admin = require("firebase-admin");
+
 admin.initializeApp();
 const db = admin.firestore();
 
-exports.agendariaWebhook = functions.https.onRequest((request, response) => {
-    const agent = new WebhookClient({ request, response });
 
-    // Cole este novo método dentro do seu arquivo functions/index.js
+/**
+ * Função principal que lida com todas as requisições do Dialogflow.
+ * @param {object} request O objeto de requisição.
+ * @param {object} response O objeto de resposta.
+ */
+function agendariaWebhook(request, response) {
+  const agent = new WebhookClient({request, response});
 
-    /**
-     * Lida com a intenção de listar os serviços disponíveis.
-     * @param {WebhookClient} agent O agente do Dialogflow.
-     * @return {Promise<void>}
-     */
-    async function listarServicos(agent) {
-        // Busca todos os documentos na coleção 'services'
-        const servicesSnapshot = await db.collection("services").get();
-
-        if (servicesSnapshot.empty) {
-            agent.add("No momento não temos nenhum serviço cadastrado. Tente novamente mais tarde.");
-            return;
-        }
-
-        let responseText = "Claro! Aqui estão nossos serviços e preços:\n\n";
-
-        // Itera sobre cada documento de serviço para construir a resposta
-        servicesSnapshot.forEach((doc) => {
-            const service = doc.data();
-            const price = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(service.price);
-            responseText += `• ${service.name}: ${price}\n`;
-        });
-
-        agent.add(responseText);
+  /**
+   * Lida com a intenção de agendar um serviço.
+   * @param {WebhookClient} agent O agente do Dialogflow.
+   * @return {Promise<void>}
+   */
+  async function agendarServico(agent) {
+    const userId = agent.originalRequest?.payload?.firebase_uid;
+    if (!userId) {
+      agent.add("Desculpe, não consegui identificar seu usuário. Por favor, tente novamente.");
+      return;
     }
-    async function agendarServico(agent) {
-        // --- NOVA PARTE: RECEBENDO O ID DO USUÁRIO ---
-        // O payload que enviamos do Flutter chega aqui
-        const userId = agent.originalRequest?.payload?.firebase_uid;
-
-        if (!userId) {
-            agent.add("Desculpe, não consegui identificar seu usuário para concluir o agendamento. Por favor, tente fazer login novamente.");
-            return;
-        }
-
-        const { servico, date, time } = agent.parameters;
-        const serviceName = servico;
-
-        const appointmentDate = new Date(date.split("T")[0] + "T" + time.split("T")[1]);
-
-        // TODO: Por enquanto, vamos pegar o primeiro funcionário que oferece o serviço.
-        // No futuro, o bot poderia perguntar "Com qual profissional?".
-        const serviceSnapshot = await db.collection("services").where("name", "==", serviceName).limit(1).get();
-
-        if (serviceSnapshot.empty) {
-            agent.add(`Desculpe, não oferecemos o serviço "${serviceName}".`);
-            return;
-        }
-
-        const serviceData = serviceSnapshot.docs[0].data();
-        const employeeId = serviceData.employeeId;
-        const durationMinutes = serviceData.durationMinutes;
-
-        // 1. Verificar a disponibilidade do funcionário (dia e hora)
-        const availabilityRef = db.collection("availabilities").doc(employeeId);
-        const availabilityDoc = await availabilityRef.get();
-
-        if (!availabilityDoc.exists) {
-            agent.add("Desculpe, o profissional não tem horários cadastrados.");
-            return;
-        }
-
-        const weekdays = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
-        const dayOfWeek = weekdays[appointmentDate.getDay()];
-        const employeeSchedule = availabilityDoc.data();
-        const daySchedule = employeeSchedule[dayOfWeek];
-
-        if (!daySchedule || !daySchedule.isAvailable) {
-            agent.add(`Desculpe, não há atendimento na ${dayOfWeek}-feira. Por favor, escolha outro dia.`);
-            return;
-        }
-
-        const startTime = daySchedule.startTime.split(":");
-        const endTime = daySchedule.endTime.split(":");
-        const startAvailability = new Date(appointmentDate).setHours(startTime[0], startTime[1], 0, 0);
-        const endAvailability = new Date(appointmentDate).setHours(endTime[0], endTime[1], 0, 0);
-
-        if (appointmentDate.getTime() < startAvailability || appointmentDate.getTime() >= endAvailability) {
-            agent.add(`Nosso horário de atendimento na ${dayOfWeek}-feira é das ${daySchedule.startTime} às ${daySchedule.endTime}.`);
-            return;
-        }
-
-        // 2. Verificar se o horário já está ocupado
-        const appointmentEndTime = new Date(appointmentDate.getTime() + durationMinutes * 60000);
-
-        const existingAppointments = await db.collection("appointments")
-            .where("employeeId", "==", employeeId)
-            .where("startDateTime", "<", admin.firestore.Timestamp.fromDate(appointmentEndTime))
-            .where("startDateTime", ">=", admin.firestore.Timestamp.fromDate(appointmentDate))
-            .get();
-
-        if (!existingAppointments.empty) {
-            agent.add("Desculpe, este horário já está ocupado. Por favor, tente outro.");
-            return;
-        }
-
-        // 3. Tudo certo! Criar o agendamento
-        const newAppointment = {
-            clientId: userId,
-            employeeId: employeeId,
-            serviceId: serviceSnapshot.docs[0].id,
-            serviceName: serviceData.name,
-            startDateTime: admin.firestore.Timestamp.fromDate(appointmentDate),
-            endDateTime: admin.firestore.Timestamp.fromDate(appointmentEndTime),
-            price: serviceData.price,
-            status: "scheduled",
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-
-        await db.collection("appointments").add(newAppointment);
-
-        const formattedDate = appointmentDate.toLocaleDateString('pt-BR');
-        const formattedTime = appointmentDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
-        agent.add(`Tudo certo! Seu agendamento de ${serviceName} foi marcado para ${formattedDate} às ${formattedTime}.`);
+    const {servico, date} = agent.parameters;
+    const serviceName = servico;
+    const timeZone = "America/Sao_Paulo";
+    const appointmentDate = utcToZonedTime(new Date(date), timeZone);
+    const serviceSnapshot = await db.collection("services").where("name", "==", serviceName).limit(1).get();
+    if (serviceSnapshot.empty) {
+      agent.add(`Desculpe, não oferecemos o serviço "${serviceName}".`);
+      return;
     }
+    const serviceData = serviceSnapshot.docs[0].data();
+    const {employeeId, durationMinutes} = serviceData;
+    const availabilityDoc = await db.collection("availabilities").doc(employeeId).get();
+    if (!availabilityDoc.exists) {
+      agent.add("Desculpe, o profissional não tem horários cadastrados.");
+      return;
+    }
+    const weekdays = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+    const dayOfWeek = weekdays[appointmentDate.getDay()];
+    const daySchedule = availabilityDoc.data()[dayOfWeek];
+    if (!daySchedule || !daySchedule.isAvailable) {
+      agent.add(`Não há atendimento na ${dayOfWeek}-feira. Escolha outro dia.`);
+      return;
+    }
+    const [startHour, startMinute] = daySchedule.startTime.split(":").map(Number);
+    const [endHour, endMinute] = daySchedule.endTime.split(":").map(Number);
+    const startAvailability = new Date(appointmentDate);
+    startAvailability.setHours(startHour, startMinute, 0, 0);
+    const endAvailability = new Date(appointmentDate);
+    endAvailability.setHours(endHour, endMinute, 0, 0);
+    if (appointmentDate < startAvailability || appointmentDate >= endAvailability) {
+      agent.add(`Nosso horário na ${dayOfWeek}-feira é das ${daySchedule.startTime} às ${daySchedule.endTime}.`);
+      return;
+    }
+    const appointmentDateUtc = zonedTimeToUtc(appointmentDate, timeZone);
+    const appointmentEndTimeUtc = new Date(appointmentDateUtc.getTime() + durationMinutes * 60000);
+    const existingAppointments = await db.collection("appointments")
+        .where("employeeId", "==", employeeId)
+        .where("startDateTime", "<", admin.firestore.Timestamp.fromDate(appointmentEndTimeUtc))
+        .where("startDateTime", ">=", admin.firestore.Timestamp.fromDate(appointmentDateUtc))
+        .get();
+    if (!existingAppointments.empty) {
+      agent.add("Desculpe, este horário já está ocupado. Tente outro.");
+      return;
+    }
+    const newAppointment = {
+      clientId: userId,
+      employeeId,
+      serviceId: serviceSnapshot.docs[0].id,
+      serviceName,
+      startDateTime: admin.firestore.Timestamp.fromDate(appointmentDateUtc),
+      endDateTime: admin.firestore.Timestamp.fromDate(appointmentEndTimeUtc),
+      price: serviceData.price,
+      status: "scheduled",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await db.collection("appointments").add(newAppointment);
+    const formattedDate = format(appointmentDate, "dd/MM/yyyy", {timeZone});
+    const formattedTime = format(appointmentDate, "HH:mm", {timeZone});
+    agent.add(`Tudo certo! Seu agendamento de ${serviceName} foi marcado para ${formattedDate} às ${formattedTime}.`);
+  }
 
-    let intentMap = new Map();
-    intentMap.set("agendar_servico", agendarServico);
-    intentMap.set("listar_servicos", listarServicos);
-    agent.handleRequest(intentMap);
-});
+  /**
+   * Lida com a intenção de listar os serviços disponíveis.
+   * @param {WebhookClient} agent O agente do Dialogflow.
+   * @return {Promise<void>}
+   */
+  async function listarServicos(agent) {
+    const servicesSnapshot = await db.collection("services").get();
+    if (servicesSnapshot.empty) {
+      agent.add("No momento não temos nenhum serviço cadastrado.");
+      return;
+    }
+    let responseText = "Claro! Aqui estão nossos serviços e preços:\n\n";
+    servicesSnapshot.forEach((doc) => {
+      const service = doc.data();
+      const price = new Intl.NumberFormat("pt-BR", {style: "currency", currency: "BRL"}).format(service.price);
+      responseText += `• ${service.name}: ${price}\n`;
+    });
+    agent.add(responseText);
+  }
+
+  /**
+   * Lida com a intenção de consultar horários, considerando múltiplos funcionários.
+   * @param {WebhookClient} agent O agente do Dialogflow.
+   * @return {Promise<void>}
+   */
+  async function consultarHorarios(agent) {
+    const {servico, date} = agent.parameters;
+    const serviceName = servico;
+    const timeZone = "America/Sao_Paulo";
+    const requestedDate = utcToZonedTime(new Date(date), timeZone);
+    const servicesSnapshot = await db.collection("services").where("name", "==", serviceName).get();
+    if (servicesSnapshot.empty) {
+      agent.add(`Desculpe, não oferecemos o serviço "${serviceName}".`);
+      return;
+    }
+    const allAvailableSlots = [];
+    for (const serviceDoc of servicesSnapshot.docs) {
+      const serviceData = serviceDoc.data();
+      const {employeeId, durationMinutes} = serviceData;
+      const employeeDoc = await db.collection("users").doc(employeeId).get();
+      const employeeName = employeeDoc.exists ? employeeDoc.data().name : "Profissional";
+      const availabilityDoc = await db.collection("availabilities").doc(employeeId).get();
+      if (!availabilityDoc.exists) continue;
+      const weekdays = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+      const dayOfWeek = weekdays[requestedDate.getDay()];
+      const daySchedule = availabilityDoc.data()[dayOfWeek];
+      if (!daySchedule || !daySchedule.isAvailable) continue;
+      const startOfDay = new Date(requestedDate.getFullYear(), requestedDate.getMonth(), requestedDate.getDate());
+      const endOfDay = new Date(startOfDay);
+      endOfDay.setDate(endOfDay.getDate() + 1);
+      const appointmentsSnapshot = await db.collection("appointments")
+          .where("employeeId", "==", employeeId)
+          .where("startDateTime", ">=", startOfDay)
+          .where("startDateTime", "<", endOfDay)
+          .get();
+      const existingAppointments = appointmentsSnapshot.docs.map((doc) => ({
+        start: doc.data().startDateTime.toDate(),
+        end: doc.data().endDateTime.toDate(),
+      }));
+      const employeeSlots = [];
+      const [startHour, startMinute] = daySchedule.startTime.split(":").map(Number);
+      const [endHour, endMinute] = daySchedule.endTime.split(":").map(Number);
+      let slotTime = new Date(startOfDay);
+      slotTime.setHours(startHour, startMinute);
+      const endWorkTime = new Date(startOfDay);
+      endWorkTime.setHours(endHour, endMinute);
+      while (slotTime < endWorkTime) {
+        const slotEndTime = new Date(slotTime.getTime() + durationMinutes * 60000);
+        if (slotEndTime > endWorkTime) break;
+        const isOverlapping = existingAppointments.some((appt) => slotTime < appt.end && slotEndTime > appt.start);
+        if (!isOverlapping) {
+          employeeSlots.push(format(utcToZonedTime(slotTime, timeZone), "HH:mm", {timeZone}));
+        }
+        slotTime = new Date(slotTime.getTime() + 15 * 60000);
+      }
+      if (employeeSlots.length > 0) {
+        allAvailableSlots.push({name: employeeName, slots: employeeSlots});
+      }
+    }
+    if (allAvailableSlots.length === 0) {
+      agent.add(`Desculpe, não encontrei horários livres para ${serviceName} neste dia. Gostaria de tentar outra data?`);
+    } else {
+      let responseText = `Encontrei horários para ${serviceName} com os seguintes profissionais:\n`;
+      allAvailableSlots.forEach((employeeData) => {
+        responseText += `\n• ${employeeData.name}: ${employeeData.slots.join(", ")}`;
+      });
+      responseText += `\n\nCom qual deles você gostaria de agendar?`;
+      agent.add(responseText);
+    }
+  }
+
+  const intentMap = new Map();
+  intentMap.set("agendar_servico", agendarServico);
+  intentMap.set("listar_servicos", listarServicos);
+  intentMap.set("consultar_horarios_disponiveis", consultarHorarios);
+  agent.handleRequest(intentMap);
+}
+
+exports.agendariaWebhook = functions.https.onRequest(agendariaWebhook);
